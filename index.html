@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Estatísticas de Kills - LoL Esports</title>
+  <style>
+    body {
+      background-color: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    h1 {
+      color: #fff;
+    }
+    select, button {
+      background-color: #1e1e1e;
+      color: #fff;
+      border: 1px solid #444;
+      padding: 8px;
+      margin: 5px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #333;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #222;
+    }
+    .highlight {
+      color: #ffd700;
+    }
+    .filters {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔎 Estatísticas de Kills - LoL Esports</h1>
+  <div class="filters">
+    <label for="league">Liga:</label>
+    <select id="league">
+      <option value="lpl">LPL</option>
+      <option value="lck">LCK</option>
+      <option value="lec">LEC</option>
+      <option value="cblol">CBLOL</option>
+    </select>
+
+    <label for="team1">Time 1:</label>
+    <select id="team1">
+      <option value="">Todos</option>
+    </select>
+
+    <label for="team2">Time 2:</label>
+    <select id="team2">
+      <option value="">Todos</option>
+    </select>
+
+    <button onclick="buscar()">Buscar</button>
+  </div>
+
+  <div id="resultados"></div>
+
+  <script>
+    const token = "cSBefy2GiSkvaV0-H20zD8VGov-gDGDWAzKKDp1rndn-ReNKEXE";
+
+    document.getElementById("league").addEventListener("change", async function() {
+      const liga = this.value;
+      const team1Select = document.getElementById("team1");
+      const team2Select = document.getElementById("team2");
+
+      // Limpa as opções atuais
+      team1Select.innerHTML = '<option value="">Todos</option>';
+      team2Select.innerHTML = '<option value="">Todos</option>';
+
+      try {
+        const response = await fetch(`https://api.pandascore.co/lol/teams?filter[league.slug]=${liga}&per_page=100`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const teams = await response.json();
+
+        teams.forEach(team => {
+          const option1 = document.createElement("option");
+          option1.value = team.name.toLowerCase();
+          option1.textContent = team.name;
+          team1Select.appendChild(option1);
+
+          const option2 = document.createElement("option");
+          option2.value = team.name.toLowerCase();
+          option2.textContent = team.name;
+          team2Select.appendChild(option2);
+        });
+      } catch (error) {
+        console.error("Erro ao carregar equipes:", error);
+      }
+    });
+
+    async function buscar() {
+      const liga = document.getElementById("league").value;
+      const team1 = document.getElementById("team1").value;
+      const team2 = document.getElementById("team2").value;
+      const resultados = document.getElementById("resultados");
+      resultados.innerHTML = "<p>🔄 Buscando dados...</p>";
+
+      try {
+        const response = await fetch(`https://api.pandascore.co/lol/matches?filter[league.slug]=${liga}&per_page=50`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const matches = await response.json();
+
+        let kills = [];
+        let tabelaHTML = `<table><thead><tr><th>Data</th><th>Time 1</th><th>Kills</th><th>Time 2</th><th>Kills</th></tr></thead><tbody>`;
+
+        for (const match of matches) {
+          if (!match.games || match.games.length === 0) continue;
+
+          const gameResp = await fetch(`https://api.pandascore.co/lol/games?filter[match_id]=${match.id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const games = await gameResp.json();
+
+          for (const game of games) {
+            if (!game.teams || game.teams.length < 2) continue;
+            const t1 = game.teams[0];
+            const t2 = game.teams[1];
+
+            const t1Name = t1.name.toLowerCase();
+            const t2Name = t2.name.toLowerCase();
+
+            // Filtro de equipe
+            if ((team1 && ![t1Name, t2Name].includes(team1)) ||
+                (team2 && ![t1Name, t2Name].includes(team2))) {
+              continue;
+            }
+
+            const kill1 = t1.kills ?? 0;
+            const kill2 = t2.kills ?? 0;
+            kills.push(kill1 + kill2);
+
+            tabelaHTML += `<tr>
+              <td>${new Date(game.begin_at).toLocaleDateString()}</td>
+              <td>${t1.name}</td><td>${kill1}</td>
+              <td>${t2.name}</td><td>${kill2}</td>
+            </tr>`;
+          }
+        }
+
+        tabelaHTML += "</tbody></table>";
+
+        if (kills.length === 0) {
+          resultados.innerHTML = "<p>❌ Nenhum jogo encontrado com os critérios.</p>";
+          return;
+        }
+
+        const media = (kills.reduce((a, b) => a + b, 0) / kills.length).toFixed(2);
+        const mediana = calcularMediana(kills);
+
+        resultados.innerHTML = `
+          <p>✅ <b>${kills.length}</b> jogos analisados</p>
+          <p class="highlight">Média de Kills: ${media}</p>
+          <p class="highlight">Mediana de Kills: ${mediana}</p>
+          ${tabelaHTML}
+        `;
+      } catch (error) {
+        console.error("Erro ao buscar dados:", error);
+        resultados.innerHTML = "<p>❌ Ocorreu um erro ao buscar os dados.</p>";
+      }
+    }
+
+    function calcularMediana(valores) {
+      const ordenados = valores.slice().sort((a, b) => a - b);
+      const meio = Math.floor(ordenados.length / 2);
+      if (ordenados.length % 2 === 0) {
+        return ((ordenados[meio - 1] + ordenados[meio]) / 2).toFixed(2);
+      } else {
+        return ordenados[meio].toFixed(2);
+      }
+    }
+
+    // Carrega as equipes da liga selecionada ao carregar a página
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("league").dispatchEvent(new Event("change"));
+    });
+  </script>
+</body>
+</html>
